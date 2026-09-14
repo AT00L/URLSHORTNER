@@ -5,7 +5,7 @@ export function authorize(req, res, next) {
     if (req.token) {
         try {
             let user = jwt.verify(req.token, jwtPrivatekey)
-            req.user = user._doc
+            req.user = user
         }
         catch (error) {
             console.log(error)

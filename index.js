@@ -25,12 +25,44 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-export function renderPage(res, page, status, { error = null, message = null, user = null } = {}) {
+function renderUrlTable(urls, origin) {
+  if (!urls || urls.length === 0) {
+    return "<p>You have not shortened any URLs yet.</p>";
+  }
+
+  const rows = urls
+    .map((u) => {
+      const short = `${origin}/${u.shortId}`;
+      return `      <tr>
+        <td><a href="${escapeHtml(short)}">${escapeHtml(short)}</a></td>
+        <td>${escapeHtml(u.url)}</td>
+        <td>${u.clicked}</td>
+      </tr>`;
+    })
+    .join("\n");
+
+  return `<table border="1" cellpadding="6">
+      <tr>
+        <th>Short URL</th>
+        <th>Original URL</th>
+        <th>Clicks</th>
+      </tr>
+${rows}
+    </table>`;
+}
+
+export function renderPage(
+  res,
+  page,
+  status,
+  { error = null, message = null, user = null, urls = null, origin = "" } = {}
+) {
   const html = fs
     .readFileSync(path.join(import.meta.dirname, "public", page), "utf8")
     .replace("<!--ERROR-->", error ? `<p>${escapeHtml(error)}</p>` : "")
     .replace("<!--MESSAGE-->", message ? `<p>${escapeHtml(message)}</p>` : "")
-    .replace("<!--WELCOME-->", user ? `<p>Welcome, ${escapeHtml(user.name)}</p>` : "");
+    .replace("<!--WELCOME-->", user ? `<p>Welcome, ${escapeHtml(user.name)}</p>` : "")
+    .replace("<!--URLS-->", renderUrlTable(urls, origin));
 
   res.status(status).send(html);
 }
@@ -111,27 +143,34 @@ app.post("/login", async (req, res) => {
   }).redirect("/shorten");
 });
 
-app.get("/shorten", authorize, (req, res) => {
-  renderPage(res, "shorten.html", 200, { user: req.user });
+app.get("/shorten", authorize, async (req, res) => {
+  const { created, error } = req.query;
+  const origin = `${req.protocol}://${req.get("host")}`;
+
+  const urls = await Url.find({ createdBy: req.user._id })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  renderPage(res, "shorten.html", 200, {
+    user: req.user,
+    urls,
+    origin,
+    error: error || null,
+    message: created ? `Short URL: ${origin}/${created}` : null,
+  });
 });
 
 app.post("/shorten", authorize, async (req, res) => {
   const { url } = req.body || {};
 
   if (!url) {
-    return renderPage(res, "shorten.html", 400, {
-      error: "URL is required",
-      user: req.user,
-    });
+    return res.redirect(303, "/shorten?error=URL+is+required");
   }
 
   const shortId = shortid.generate();
   await Url.create({ shortId, url, createdBy: req.user._id });
 
-  renderPage(res, "shorten.html", 200, {
-    message: `Short URL: ${req.protocol}://${req.get("host")}/${shortId}`,
-    user: req.user,
-  });
+  res.redirect(303, `/shorten?created=${shortId}`);
 });
 
 connectToMongoDB(MONGODB_URI)
