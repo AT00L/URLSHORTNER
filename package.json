@@ -19,10 +19,12 @@
   },
   "homepage": "https://github.com/AT00L/URLSHORTNER#readme",
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.10.0"
+    "mongoose": "^9.10.0",
+    "shortid": "^2.2.17"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
