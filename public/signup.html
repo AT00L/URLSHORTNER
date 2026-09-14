@@ -3,15 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login</title>
+    <title>Sign Up</title>
   </head>
   <body>
-    <h1>Login</h1>
+    <h1>Sign Up</h1>
 
     <!--ERROR-->
     <!--MESSAGE-->
 
-    <form action="/login" method="POST">
+    <form action="/signup" method="POST">
+      <p>
+        <label for="name">Name</label><br />
+        <input type="text" id="name" name="name" />
+      </p>
+
       <p>
         <label for="email">Email</label><br />
         <input type="email" id="email" name="email" />
@@ -22,9 +27,9 @@
         <input type="password" id="password" name="password" />
       </p>
 
-      <button type="submit">Login</button>
+      <button type="submit">Sign Up</button>
     </form>
 
-    <p>New here? <a href="/signup">Sign up</a></p>
+    <p>Already have an account? <a href="/login">Login</a></p>
   </body>
 </html>
