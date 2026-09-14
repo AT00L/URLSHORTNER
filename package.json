@@ -1,0 +1,24 @@
+{
+  "name": "urlshortner",
+  "version": "1.0.0",
+  "description": "url shortner with authentication",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AT00L/URLSHORTNER.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AT00L/URLSHORTNER/issues"
+  },
+  "homepage": "https://github.com/AT00L/URLSHORTNER#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}
