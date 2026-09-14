@@ -143,6 +143,10 @@ app.post("/login", async (req, res) => {
   }).redirect("/shorten");
 });
 
+app.post("/logout", (req, res) => {
+  res.clearCookie("token").redirect(303, "/login");
+});
+
 app.get("/shorten", authorize, async (req, res) => {
   const { created, error } = req.query;
   const origin = `${req.protocol}://${req.get("host")}`;
@@ -170,7 +174,27 @@ app.post("/shorten", authorize, async (req, res) => {
   const shortId = shortid.generate();
   await Url.create({ shortId, url, createdBy: req.user._id });
 
-  res.redirect(303, `/shorten?created=${shortId}`);
+  res.redirect(303, `/shorten`);
+});
+
+app.get("/:shortId", async (req, res) => {
+  const entry = await Url.findOneAndUpdate(
+    { shortId: req.params.shortId },
+    { $inc: { clicked: 1 } },
+    { returnDocument: "after" }
+  );
+
+  if (!entry) {
+    return renderPage(res, "notfound.html", 404, {
+      error: "This short URL does not exist.",
+    });
+  }
+
+  const target = /^https?:\/\//i.test(entry.url)
+    ? entry.url
+    : `https://${entry.url}`;
+
+  res.redirect(target);
 });
 
 connectToMongoDB(MONGODB_URI)
