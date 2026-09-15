@@ -12,6 +12,8 @@ import { authorize, homePageCheck } from "./middleware.js";
 import shortid from "shortid";
 
 const app = express();
+// EB nginx and Cloudflare terminate TLS upstream; without this req.protocol is always "http"
+app.set("trust proxy", true);
 const PORT = process.env.PORT || 8000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const jwtPrivatekey = process.env.JWT_PRIVATE_KEY
