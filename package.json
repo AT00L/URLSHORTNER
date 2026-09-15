@@ -2,11 +2,11 @@
   "name": "urlshortner",
   "version": "1.0.0",
   "description": "url shortner with authentication",
-  "main": "index.js",
+  "main": "app.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon --inspect index.js"
+    "start": "nodemon --inspect app.js"
   },
   "repository": {
     "type": "git",
