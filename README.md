@@ -49,6 +49,8 @@ own set of short links with click counts and QR codes.
 | POST   | `/shorten`           | Create a short link                      |
 | GET    | `/urls/:id/qr`       | QR code page for one link                |
 | POST   | `/urls/:id/delete`   | Delete one link                          |
+| GET    | `/robots.txt`        | Crawl rules, points at the sitemap       |
+| GET    | `/sitemap.xml`       | Sitemap of the public pages              |
 | GET    | `/:shortId`          | Resolve and redirect, counting the click |
 
 ## Signup flow
@@ -87,7 +89,6 @@ Then open http://localhost:8000
 | `JWT_PRIVATE_KEY` | Secret used to sign session and pending tokens.       |
 | `RESEND_API_KEY`  | Resend API key used to send one-time codes.           |
 | `MAIL_FROM`       | Sender address on a domain verified in Resend.        |
-| `APP_NAME`        | Name shown in emails. Defaults to `URL Shortener`.    |
 
 `.env` is gitignored — never commit real credentials.
 

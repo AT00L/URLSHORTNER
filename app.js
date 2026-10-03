@@ -25,6 +25,7 @@ const app = express();
 // EB nginx and Cloudflare terminate TLS upstream; without this req.protocol is always "http"
 app.set("trust proxy", true);
 const jwtPrivatekey = process.env.JWT_PRIVATE_KEY
+const APP_NAME = "URLShorty";
 
 // Vercel serves over HTTPS and sets NODE_ENV=production for us
 const COOKIE_OPTIONS = {
@@ -138,20 +139,109 @@ function renderStats(urls) {
   return `<p class="stats">${urls.length} ${linkWord} · ${clicks} ${clickWord} total</p>`;
 }
 
-// read once per container rather than on every request
-let cachedHead = null;
-function headTags() {
-  if (!cachedHead) {
-    const dir = path.join(import.meta.dirname, "views");
-    const css = fs.readFileSync(path.join(dir, "style.css"), "utf8");
-    const icon = fs.readFileSync(path.join(dir, "favicon.svg")).toString("base64");
+const APP_URL = "https://url.atulcode.com";
+const GITHUB_URL = "https://github.com/AT00L/URLSHORTNER";
 
-    cachedHead =
-      `<link rel="icon" href="data:image/svg+xml;base64,${icon}" />\n` +
-      `<style>\n${css}</style>`;
+// Per-page title and description. Pages behind the login, or that only exist
+// mid-signup, are marked noindex — thin or duplicate pages hurt the pages that
+// should rank.
+const SEO = {
+  "login.html": {
+    path: "/login",
+    title: `Login — ${APP_NAME}`,
+    description: `Sign in to ${APP_NAME} to shorten links, track click counts and download QR codes for every short URL you create.`,
+    index: true,
+  },
+  "signup.html": {
+    path: "/signup",
+    title: `Create a free account — ${APP_NAME}`,
+    description: `Create a free ${APP_NAME} account. Shorten long URLs, follow how often each link is clicked and generate a QR code in seconds.`,
+    index: true,
+  },
+  "verify.html": { title: `Confirm your email — ${APP_NAME}`, index: false },
+  "set-password.html": { title: `Choose a password — ${APP_NAME}`, index: false },
+  "shorten.html": { title: `Your links — ${APP_NAME}`, index: false },
+  "qr.html": { title: `QR code — ${APP_NAME}`, index: false },
+  "notfound.html": { title: `Link not found — ${APP_NAME}`, index: false },
+};
+
+const DEFAULT_DESCRIPTION = `${APP_NAME} is a free URL shortener with click tracking and QR codes. Turn long links into short, shareable ones and see how often they are opened.`;
+
+// CSS and icon never change, so they are read once per container
+let cachedAssets = null;
+function assets() {
+  if (!cachedAssets) {
+    const dir = path.join(import.meta.dirname, "views");
+    cachedAssets = {
+      css: fs.readFileSync(path.join(dir, "style.css"), "utf8"),
+      icon: fs.readFileSync(path.join(dir, "favicon.svg")).toString("base64"),
+    };
+  }
+  return cachedAssets;
+}
+
+function headTags(page) {
+  const { css, icon } = assets();
+  const seo = SEO[page] || {};
+  const title = seo.title || APP_NAME;
+  const description = seo.description || DEFAULT_DESCRIPTION;
+  const canonical = APP_URL && seo.path ? `${APP_URL}${seo.path}` : null;
+
+  const tags = [
+    `<title>${escapeHtml(title)}</title>`,
+    `<meta name="description" content="${escapeHtml(description)}" />`,
+    `<meta name="robots" content="${seo.index ? "index, follow" : "noindex, nofollow"}" />`,
+    `<meta name="theme-color" content="#2f6fed" />`,
+    canonical ? `<link rel="canonical" href="${escapeHtml(canonical)}" />` : "",
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="${escapeHtml(APP_NAME)}" />`,
+    `<meta property="og:title" content="${escapeHtml(title)}" />`,
+    `<meta property="og:description" content="${escapeHtml(description)}" />`,
+    canonical ? `<meta property="og:url" content="${escapeHtml(canonical)}" />` : "",
+    `<meta name="twitter:card" content="summary" />`,
+    `<meta name="twitter:title" content="${escapeHtml(title)}" />`,
+    `<meta name="twitter:description" content="${escapeHtml(description)}" />`,
+    `<link rel="icon" href="data:image/svg+xml;base64,${icon}" />`,
+  ].filter(Boolean);
+
+  if (seo.index) {
+    tags.push(
+      `<script type="application/ld+json">${JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        name: APP_NAME,
+        description: DEFAULT_DESCRIPTION,
+        applicationCategory: "UtilitiesApplication",
+        operatingSystem: "Any",
+        url: APP_URL || undefined,
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      })}</script>`
+    );
   }
 
-  return cachedHead;
+  tags.push(`<style>\n${css}</style>`);
+  return tags.join("\n    ");
+}
+
+function renderFooter() {
+  return `<footer class="site-footer">
+      <h2>About ${escapeHtml(APP_NAME)}</h2>
+      <p>
+        ${escapeHtml(APP_NAME)} is a free link shortener. Paste a long URL and get a short,
+        shareable one back — then watch how many times it is opened, and hand it
+        out as a QR code when a link is awkward to type.
+      </p>
+      <ul>
+        <li>Shorten any long URL into a compact link you can share anywhere</li>
+        <li>Track a click count for every link you create</li>
+        <li>Download a QR code as PNG or SVG for posters, slides and packaging</li>
+        <li>Keep every link in one private dashboard, and delete any of them</li>
+      </ul>
+      <p class="legal">
+        <span>© ${new Date().getFullYear()} ${escapeHtml(APP_NAME)}</span>
+        <span><a href="${GITHUB_URL}" target="_blank" rel="noopener">Source on GitHub</a></span>
+      </p>
+    </footer>`;
 }
 
 export function renderPage(
@@ -162,8 +252,9 @@ export function renderPage(
 ) {
   const html = fs
     .readFileSync(path.join(import.meta.dirname, "views", page), "utf8")
-    .replace("<!--STYLES-->", headTags())
+    .replace("<!--STYLES-->", headTags(page))
     .replace("<!--BANNER-->", renderBanner(user))
+    .replace("<!--FOOTER-->", renderFooter())
     .replace("<!--ERROR-->", error ? `<p class="alert error">${escapeHtml(error)}</p>` : "")
     .replace("<!--MESSAGE-->", message ? `<p class="alert ok">${escapeHtml(message)}</p>` : "")
     .replace("<!--QR-->", qr || "")
@@ -538,6 +629,49 @@ app.post("/urls/:id/delete", authorize, async (req, res) => {
   }
 
   res.redirect(303, "/shorten?deleted=1");
+});
+
+// Registered before the /:shortId catch-all, which would otherwise match these.
+app.get("/robots.txt", (req, res) => {
+  const origin = APP_URL || `${req.protocol}://${req.get("host")}`;
+
+  res.type("text/plain").send(
+    [
+      "User-agent: *",
+      "Allow: /$",
+      "Allow: /login",
+      "Allow: /signup",
+      "Disallow: /shorten",
+      "Disallow: /urls/",
+      "Disallow: /verify",
+      "Disallow: /set-password",
+      "",
+      `Sitemap: ${origin}/sitemap.xml`,
+      "",
+    ].join("\n")
+  );
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const origin = APP_URL || `${req.protocol}://${req.get("host")}`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const urls = ["/", "/login", "/signup"]
+    .map(
+      (p) => `  <url>
+    <loc>${origin}${p}</loc>
+    <lastmod>${today}</lastmod>
+  </url>`
+    )
+    .join("\n");
+
+  res.type("application/xml").send(
+    `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`
+  );
 });
 
 app.get("/:shortId", async (req, res) => {

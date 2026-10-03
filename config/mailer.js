@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { OTP_TTL_MINUTES } from "../utils/otp.js";
 
-const APP_NAME = process.env.APP_NAME || "URL Shortener";
+const APP_NAME = "URLShorty";
 
 let client = null;
 

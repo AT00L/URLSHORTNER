@@ -307,3 +307,38 @@ input.otp {
 .avatar-menu .menu-item:hover { background: var(--bg); filter: none; }
 
 .narrow { margin-top: 4vh; }
+
+/* ---- site footer / SEO copy ---- */
+.site-footer {
+  max-width: 860px;
+  margin: 56px auto 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.site-footer h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.site-footer p { margin: 0 0 12px; }
+.site-footer ul {
+  margin: 0 0 12px;
+  padding-left: 18px;
+}
+.site-footer li { margin-bottom: 3px; }
+.site-footer .legal {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
