@@ -7,7 +7,7 @@ import { User } from "./models/user.js";
 import { Url } from "./models/url.js";
 import jwt from "jsonwebtoken"
 import cookieParser from "cookie-parser";
-import { authorize, homePageCheck } from "./middleware.js";
+import { authorize, homePageCheck } from "./middlewares/auth.js";
 import shortid from "shortid";
 
 const app = express();
