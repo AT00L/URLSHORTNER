@@ -3,7 +3,6 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import express from "express";
-import { connectToMongoDB } from "./config/db.js";
 import { User } from "./models/user.js";
 import { Url } from "./models/url.js";
 import jwt from "jsonwebtoken"
@@ -14,9 +13,15 @@ import shortid from "shortid";
 const app = express();
 // EB nginx and Cloudflare terminate TLS upstream; without this req.protocol is always "http"
 app.set("trust proxy", true);
-const PORT = process.env.PORT || 8000;
-const MONGODB_URI = process.env.MONGODB_URI;
 const jwtPrivatekey = process.env.JWT_PRIVATE_KEY
+
+// Vercel serves over HTTPS and sets NODE_ENV=production for us
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+};
+
 app.use(cookieParser());
 
 function escapeHtml(text) {
@@ -60,7 +65,7 @@ export function renderPage(
   { error = null, message = null, user = null, urls = null, origin = "" } = {}
 ) {
   const html = fs
-    .readFileSync(path.join(import.meta.dirname, "public", page), "utf8")
+    .readFileSync(path.join(import.meta.dirname, "views", page), "utf8")
     .replace("<!--ERROR-->", error ? `<p>${escapeHtml(error)}</p>` : "")
     .replace("<!--MESSAGE-->", message ? `<p>${escapeHtml(message)}</p>` : "")
     .replace("<!--WELCOME-->", user ? `<p>Welcome, ${escapeHtml(user.name)}</p>` : "")
@@ -141,12 +146,13 @@ app.post("/login", async (req, res) => {
   );
 
   res.cookie("token", token, {
-    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    ...COOKIE_OPTIONS,
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   }).redirect("/shorten");
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("token").redirect(303, "/login");
+  res.clearCookie("token", COOKIE_OPTIONS).redirect(303, "/login");
 });
 
 app.get("/shorten", authorize, async (req, res) => {
@@ -199,13 +205,4 @@ app.get("/:shortId", async (req, res) => {
   res.redirect(target);
 });
 
-connectToMongoDB(MONGODB_URI)
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server started at http://localhost:${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("MongoDB connection failed:", err.message);
-    process.exit(1);
-  });
+export default app;

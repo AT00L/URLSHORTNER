@@ -21,7 +21,7 @@ counts. Live at **https://urlshortneratul.is-a.dev**
 | Database | MongoDB via Mongoose          |
 | Auth     | jsonwebtoken + cookie-parser  |
 | IDs      | shortid                       |
-| Hosting  | AWS Elastic Beanstalk         |
+| Hosting  | Vercel (serverless functions) |
 
 ## Routes
 
@@ -59,12 +59,41 @@ Then open http://localhost:8000
 
 `.env` is gitignored — never commit real credentials.
 
-## Deployment notes
+## Project layout
 
-Production runs `npm start` (`node app.js`), not nodemon — nodemon is a dev-only
-dependency and is not installed in production. The app trusts the upstream proxy
-so that generated links use the correct scheme when TLS is terminated by nginx
-or Cloudflare.
+| File             | Role                                                      |
+| ---------------- | --------------------------------------------------------- |
+| `app.js`         | Builds and exports the Express app. No `listen` call.      |
+| `server.js`      | Local entry point — connects to Mongo, then listens.       |
+| `api/index.js`   | Vercel entry point — the exported serverless handler.      |
+| `views/`         | HTML templates read by the renderer (not a static dir).    |
+| `vercel.json`    | Routes every request to the function; bundles `views/`.    |
+
+## Deploying to Vercel
+
+1. Push the repo to GitHub and import it at [vercel.com/new](https://vercel.com/new).
+   No build command or output directory is needed.
+2. Provision a **MongoDB Atlas** cluster. A `localhost` connection string cannot
+   work from Vercel — the function has no local database beside it. In Atlas,
+   allow access from anywhere (`0.0.0.0/0`), since Vercel functions do not have
+   fixed outbound IPs.
+3. Add the environment variables under *Settings → Environment Variables*:
+
+   | Variable          | Value                                      |
+   | ----------------- | ------------------------------------------ |
+   | `MONGODB_URI`     | The Atlas connection string, with a db name |
+   | `JWT_PRIVATE_KEY` | A long random secret                        |
+
+   `PORT` is not used on Vercel; the platform handles routing itself.
+4. Deploy. Every request is rewritten to `api/index.js`, which awaits a cached
+   MongoDB connection and then hands the request to Express.
+
+The connection is cached on `globalThis`, so a warm container reuses one
+connection across invocations instead of opening a new one per request. A failed
+connection clears the cache so the next request retries.
+
+Local development is unchanged: `npm run dev` runs `server.js` under nodemon,
+which still opens a normal long-lived HTTP server on `PORT`.
 
 ## License
 
