@@ -26,6 +26,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.0",
     "qrcode": "^1.5.4",
+    "resend": "^6.32.0",
     "shortid": "^2.2.17"
   },
   "devDependencies": {

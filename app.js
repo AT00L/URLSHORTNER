@@ -11,6 +11,15 @@ import { authorize, homePageCheck } from "./middlewares/auth.js";
 import shortid from "shortid";
 import mongoose from "mongoose";
 import QRCode from "qrcode";
+import { sendOtpEmail } from "./config/mailer.js";
+import {
+  generateOtp,
+  hashOtp,
+  otpExpiry,
+  otpMatches,
+  OTP_MAX_ATTEMPTS,
+  OTP_TTL_MINUTES,
+} from "./utils/otp.js";
 
 const app = express();
 // EB nginx and Cloudflare terminate TLS upstream; without this req.protocol is always "http"
@@ -105,7 +114,7 @@ export function renderPage(
   res,
   page,
   status,
-  { error = null, message = null, user = null, urls = null, origin = "", qr = null } = {}
+  { error = null, message = null, user = null, urls = null, origin = "", qr = null, sentTo = null } = {}
 ) {
   const html = fs
     .readFileSync(path.join(import.meta.dirname, "views", page), "utf8")
@@ -119,10 +128,69 @@ export function renderPage(
         : "<span></span>"
     )
     .replace("<!--QR-->", qr || "")
+    .replace(
+      "<!--SENTTO-->",
+      sentTo
+        ? `We sent a code to <strong>${escapeHtml(sentTo)}</strong>. It expires in ${OTP_TTL_MINUTES} minutes.`
+        : ""
+    )
     .replace("<!--STATS-->", renderStats(urls))
     .replace("<!--URLS-->", renderUrlTable(urls, origin));
 
   res.status(status).send(html);
+}
+
+
+const PENDING_COOKIE = "pending";
+const PENDING_TTL_SECONDS = OTP_TTL_MINUTES * 60;
+
+function startPending(res, user, stage) {
+  const token = jwt.sign({ _id: user._id, stage }, jwtPrivatekey, {
+    expiresIn: PENDING_TTL_SECONDS,
+  });
+
+  res.cookie(PENDING_COOKIE, token, {
+    ...COOKIE_OPTIONS,
+    maxAge: PENDING_TTL_SECONDS * 1000,
+  });
+}
+
+function readPending(req) {
+  const raw = req.cookies?.[PENDING_COOKIE];
+  if (!raw) return null;
+
+  try {
+    return jwt.verify(raw, jwtPrivatekey);
+  } catch {
+    return null;
+  }
+}
+
+function issueSession(res, user) {
+  const token = jwt.sign(
+    { _id: user._id, name: user.name, email: user.email, role: user.role },
+    jwtPrivatekey,
+    { expiresIn: "30d" }
+  );
+
+  res
+    .clearCookie(PENDING_COOKIE, COOKIE_OPTIONS)
+    .cookie("token", token, {
+      ...COOKIE_OPTIONS,
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+}
+
+// Stores a fresh code on the user and emails it. Throws if the mail fails.
+async function issueOtp(user) {
+  const code = generateOtp();
+
+  user.otpHash = hashOtp(code);
+  user.otpExpiresAt = otpExpiry();
+  user.otpAttempts = 0;
+  await user.save();
+
+  await sendOtpEmail({ to: user.email, name: user.name, code });
 }
 
 app.use(express.json());
@@ -142,31 +210,54 @@ app.get("/signup", (req, res) => {
 });
 
 app.post("/signup", homePageCheck, async (req, res) => {
-  const { name, email, password } = req.body || {};
+  const { name, email } = req.body || {};
 
-  if (!name || !email || !password) {
+  if (!name || !email) {
     return renderPage(res, "signup.html", 400, {
-      error: "Name, email and password are required",
+      error: "Name and email are required",
     });
+  }
+
+  const existing = await User.findOne({ email });
+
+  // A finished account (verified + password set) is never overwritten.
+  if (existing && existing.isVerified && existing.password) {
+    return renderPage(res, "signup.html", 400, {
+      error: "An account with this email already exists. Try logging in.",
+    });
+  }
+
+  let user;
+
+  try {
+    if (existing) {
+      // Half-finished signup — start it over with the new details.
+      existing.name = name;
+      existing.password = undefined;
+      existing.isVerified = false;
+      user = existing;
+      await user.save();
+    } else {
+      user = await User.create({ name, email });
+    }
+  } catch (err) {
+    return renderPage(res, "signup.html", 400, { error: err.message });
   }
 
   try {
-    await User.create({ name, email, password });
+    await issueOtp(user);
   } catch (err) {
-    if (err.code === 11000) {
-      return renderPage(res, "signup.html", 400, {
-        error: "An account with this email already exists",
-      });
-    }
+    // Nothing usable exists yet, so don't leave the record behind.
+    await User.deleteOne({ _id: user._id });
+    console.error("Signup email failed, account removed:", err.message);
 
-    return renderPage(res, "signup.html", 400, {
-      error: err.message,
+    return renderPage(res, "signup.html", 502, {
+      error: `We could not send a code to ${email}. Please check the address and try again.`,
     });
   }
 
-  renderPage(res, "signup.html", 200, {
-    message: `Account created for ${email}. You can now log in.`,
-  });
+  startPending(res, user, "otp");
+  res.redirect(303, "/verify");
 });
 
 app.get("/login", homePageCheck, (req, res) => {
@@ -182,28 +273,153 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  const user = await User.findOne({ email, password });
+  const user = await User.findOne({ email });
 
-  if (!user) {
+  // An unverified or half-finished signup is not an account yet.
+  if (!user || !user.isVerified || !user.password) {
+    return renderPage(res, "login.html", 400, {
+      error: "No account exists for this email.",
+    });
+  }
+
+  if (user.password !== password) {
     return renderPage(res, "login.html", 400, {
       error: "Invalid Credentials",
     });
   }
 
-  var token = jwt.sign(
-    { _id: user._id, name: user.name, email: user.email, role: user.role },
-    jwtPrivatekey,
-    { expiresIn: "30d" }
-  );
+  issueSession(res, user);
+  res.redirect(303, "/shorten");
+});
 
-  res.cookie("token", token, {
-    ...COOKIE_OPTIONS,
-    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-  }).redirect("/shorten");
+app.get("/verify", async (req, res) => {
+  const pending = readPending(req);
+  if (!pending || pending.stage !== "otp") return res.redirect(303, "/signup");
+
+  const user = await User.findById(pending._id).lean();
+  if (!user) return res.redirect(303, "/signup");
+
+  const { error, resent } = req.query;
+
+  renderPage(res, "verify.html", 200, {
+    sentTo: user.email,
+    error: error || null,
+    message: resent ? "A new code is on its way." : null,
+  });
+});
+
+app.post("/verify", async (req, res) => {
+  const pending = readPending(req);
+  if (!pending || pending.stage !== "otp") return res.redirect(303, "/signup");
+
+  const user = await User.findById(pending._id);
+  if (!user) return res.redirect(303, "/signup");
+
+  const { code } = req.body || {};
+
+  if (!code) {
+    return renderPage(res, "verify.html", 400, {
+      sentTo: user.email,
+      error: "Enter the 6-digit code.",
+    });
+  }
+
+  if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+    return renderPage(res, "verify.html", 400, {
+      sentTo: user.email,
+      error: "That code has expired. Send a new one.",
+    });
+  }
+
+  if (user.otpAttempts >= OTP_MAX_ATTEMPTS) {
+    return renderPage(res, "verify.html", 429, {
+      sentTo: user.email,
+      error: "Too many incorrect attempts. Send a new code.",
+    });
+  }
+
+  if (!otpMatches(code, user.otpHash)) {
+    user.otpAttempts += 1;
+    await user.save();
+
+    const left = OTP_MAX_ATTEMPTS - user.otpAttempts;
+
+    return renderPage(res, "verify.html", 400, {
+      sentTo: user.email,
+      error: `That code is not correct. ${left} attempt${left === 1 ? "" : "s"} left.`,
+    });
+  }
+
+  user.isVerified = true;
+  user.otpHash = undefined;
+  user.otpExpiresAt = undefined;
+  user.otpAttempts = 0;
+  await user.save();
+
+  // Email proven — now let them choose a password.
+  startPending(res, user, "password");
+  res.redirect(303, "/set-password");
+});
+
+app.post("/verify/resend", async (req, res) => {
+  const pending = readPending(req);
+  if (!pending || pending.stage !== "otp") return res.redirect(303, "/signup");
+
+  const user = await User.findById(pending._id);
+  if (!user) return res.redirect(303, "/signup");
+
+  try {
+    await issueOtp(user);
+  } catch (err) {
+    console.error("Resend failed:", err.message);
+    return res.redirect(303, "/verify?error=We+could+not+send+a+new+code");
+  }
+
+  res.redirect(303, "/verify?resent=1");
+});
+
+app.get("/set-password", async (req, res) => {
+  const pending = readPending(req);
+  if (!pending || pending.stage !== "password") return res.redirect(303, "/signup");
+
+  const user = await User.findById(pending._id).lean();
+  if (!user) return res.redirect(303, "/signup");
+
+  renderPage(res, "set-password.html", 200, {
+    sentTo: `${user.email} is confirmed.`,
+  });
+});
+
+app.post("/set-password", async (req, res) => {
+  const pending = readPending(req);
+  if (!pending || pending.stage !== "password") return res.redirect(303, "/signup");
+
+  const user = await User.findById(pending._id);
+  if (!user) return res.redirect(303, "/signup");
+
+  const { password, confirm } = req.body || {};
+  const fail = (error) =>
+    renderPage(res, "set-password.html", 400, {
+      error,
+      sentTo: `${user.email} is confirmed.`,
+    });
+
+  if (!password || !confirm) return fail("Enter the password twice.");
+  if (password.length < 8) return fail("Use at least 8 characters.");
+  if (password !== confirm) return fail("Those passwords do not match.");
+
+  user.password = password;
+  await user.save();
+
+  issueSession(res, user);
+  res.redirect(303, "/shorten");
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("token", COOKIE_OPTIONS).redirect(303, "/login");
+  res
+    .clearCookie("token", COOKIE_OPTIONS)
+    .clearCookie(PENDING_COOKIE, COOKIE_OPTIONS)
+    .redirect(303, "/login");
 });
 
 app.get("/shorten", authorize, async (req, res) => {

@@ -217,3 +217,10 @@ td form { display: inline; }
   color: var(--muted);
   font-weight: 500;
 }
+
+input.otp {
+  font-size: 26px;
+  letter-spacing: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
