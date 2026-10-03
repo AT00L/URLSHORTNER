@@ -43,6 +43,44 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+function renderBanner(user) {
+  const brand = `<a class="brand" href="/">URL<span>Shorty</span></a>`;
+
+  if (!user) {
+    return `<header class="banner">${brand}</header>`;
+  }
+
+  const initial = escapeHtml((user.name || user.email || "?").trim().charAt(0).toUpperCase());
+
+  return `<header class="banner">
+      ${brand}
+      <details class="avatar-menu" id="avatarMenu">
+        <summary class="avatar" title="${escapeHtml(user.name || "")}" aria-label="Account menu">${initial}</summary>
+        <div class="menu">
+          <div class="menu-head">
+            <strong>${escapeHtml(user.name || "")}</strong>
+            <span>${escapeHtml(user.email || "")}</span>
+          </div>
+          <form action="/logout" method="POST">
+            <button class="menu-item" type="submit">Log out</button>
+          </form>
+        </div>
+      </details>
+    </header>
+    <script>
+      // close the menu when clicking anywhere else, or on Escape
+      document.addEventListener("click", (e) => {
+        const menu = document.getElementById("avatarMenu");
+        if (menu && menu.open && !menu.contains(e.target)) menu.open = false;
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        const menu = document.getElementById("avatarMenu");
+        if (menu) menu.open = false;
+      });
+    </script>`;
+}
+
 function renderUrlTable(urls, origin) {
   if (!urls || urls.length === 0) {
     return `<p class="empty">No links yet — shorten your first URL above.</p>`;
@@ -101,13 +139,19 @@ function renderStats(urls) {
 }
 
 // read once per container rather than on every request
-let cachedCss = null;
-function styleTag() {
-  cachedCss ??= fs.readFileSync(
-    path.join(import.meta.dirname, "views", "style.css"),
-    "utf8"
-  );
-  return `<style>\n${cachedCss}</style>`;
+let cachedHead = null;
+function headTags() {
+  if (!cachedHead) {
+    const dir = path.join(import.meta.dirname, "views");
+    const css = fs.readFileSync(path.join(dir, "style.css"), "utf8");
+    const icon = fs.readFileSync(path.join(dir, "favicon.svg")).toString("base64");
+
+    cachedHead =
+      `<link rel="icon" href="data:image/svg+xml;base64,${icon}" />\n` +
+      `<style>\n${css}</style>`;
+  }
+
+  return cachedHead;
 }
 
 export function renderPage(
@@ -118,15 +162,10 @@ export function renderPage(
 ) {
   const html = fs
     .readFileSync(path.join(import.meta.dirname, "views", page), "utf8")
-    .replace("<!--STYLES-->", styleTag())
+    .replace("<!--STYLES-->", headTags())
+    .replace("<!--BANNER-->", renderBanner(user))
     .replace("<!--ERROR-->", error ? `<p class="alert error">${escapeHtml(error)}</p>` : "")
     .replace("<!--MESSAGE-->", message ? `<p class="alert ok">${escapeHtml(message)}</p>` : "")
-    .replace(
-      "<!--WELCOME-->",
-      user
-        ? `<span class="welcome">Signed in as <strong>${escapeHtml(user.name)}</strong></span>`
-        : "<span></span>"
-    )
     .replace("<!--QR-->", qr || "")
     .replace(
       "<!--SENTTO-->",

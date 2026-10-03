@@ -224,3 +224,86 @@ input.otp {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- banner ---- */
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto 26px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand span { color: var(--accent); }
+.brand:hover { opacity: .85; }
+
+/* ---- avatar menu ---- */
+.avatar-menu { position: relative; }
+.avatar-menu summary {
+  list-style: none;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.avatar-menu summary::-webkit-details-marker { display: none; }
+.avatar-menu summary:hover { filter: brightness(1.08); }
+.avatar-menu[open] summary { outline: 2px solid var(--border); outline-offset: 2px; }
+
+.avatar-menu .menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 210px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .14);
+  overflow: hidden;
+  z-index: 20;
+}
+.avatar-menu .menu-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.avatar-menu .menu-head strong { font-size: 14px; }
+.avatar-menu .menu-head span {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+.avatar-menu .menu-item {
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--danger);
+  cursor: pointer;
+}
+.avatar-menu .menu-item:hover { background: var(--bg); filter: none; }
+
+.narrow { margin-top: 4vh; }
