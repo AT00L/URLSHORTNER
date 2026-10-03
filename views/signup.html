@@ -4,32 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign Up</title>
+    <!--STYLES-->
   </head>
   <body>
-    <h1>Sign Up</h1>
+    <div class="narrow">
+      <div class="card">
+        <h1>Create account</h1>
+        <p class="muted">Shorten links and track their clicks.</p>
 
-    <!--ERROR-->
-    <!--MESSAGE-->
+        <!--ERROR-->
+        <!--MESSAGE-->
 
-    <form action="/signup" method="POST">
-      <p>
-        <label for="name">Name</label><br />
-        <input type="text" id="name" name="name" />
-      </p>
+        <form action="/signup" method="POST">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" autocomplete="name" />
 
-      <p>
-        <label for="email">Email</label><br />
-        <input type="email" id="email" name="email" />
-      </p>
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" autocomplete="email" />
 
-      <p>
-        <label for="password">Password</label><br />
-        <input type="password" id="password" name="password" />
-      </p>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="new-password" />
 
-      <button type="submit">Sign Up</button>
-    </form>
+          <button class="full" type="submit">Sign Up</button>
+        </form>
+      </div>
 
-    <p>Already have an account? <a href="/login">Login</a></p>
+      <p class="foot">Already have an account? <a href="/login">Login</a></p>
+    </div>
   </body>
 </html>

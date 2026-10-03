@@ -9,6 +9,8 @@ import jwt from "jsonwebtoken"
 import cookieParser from "cookie-parser";
 import { authorize, homePageCheck } from "./middlewares/auth.js";
 import shortid from "shortid";
+import mongoose from "mongoose";
+import QRCode from "qrcode";
 
 const app = express();
 // EB nginx and Cloudflare terminate TLS upstream; without this req.protocol is always "http"
@@ -34,41 +36,90 @@ function escapeHtml(text) {
 
 function renderUrlTable(urls, origin) {
   if (!urls || urls.length === 0) {
-    return "<p>You have not shortened any URLs yet.</p>";
+    return `<p class="empty">No links yet — shorten your first URL above.</p>`;
   }
 
   const rows = urls
     .map((u) => {
       const short = `${origin}/${u.shortId}`;
-      return `      <tr>
-        <td><a href="${escapeHtml(short)}">${escapeHtml(short)}</a></td>
-        <td>${escapeHtml(u.url)}</td>
-        <td>${u.clicked}</td>
-      </tr>`;
+      const created = new Date(u.createdAt).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      return `        <tr>
+          <td>
+            <a href="${escapeHtml(short)}" target="_blank" rel="noopener">${escapeHtml(short)}</a>
+            <button type="button" class="link-btn" data-copy="${escapeHtml(short)}">Copy</button>
+            <a class="link-btn" href="/urls/${u._id}/qr">QR</a>
+          </td>
+          <td class="orig" title="${escapeHtml(u.url)}">${escapeHtml(u.url)}</td>
+          <td class="num">${u.clicked}</td>
+          <td class="muted">${escapeHtml(created)}</td>
+          <td class="actions">
+            <form method="POST" action="/urls/${u._id}/delete"
+                  onsubmit="return confirm('Delete this short link? Anyone using it will get a 404.')">
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>`;
     })
     .join("\n");
 
-  return `<table border="1" cellpadding="6">
-      <tr>
-        <th>Short URL</th>
-        <th>Original URL</th>
-        <th>Clicks</th>
-      </tr>
+  return `<div class="table-wrap">
+      <table>
+        <tr>
+          <th>Short URL</th>
+          <th>Destination</th>
+          <th>Clicks</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
 ${rows}
-    </table>`;
+      </table>
+    </div>`;
+}
+
+function renderStats(urls) {
+  if (!urls || urls.length === 0) return "";
+
+  const clicks = urls.reduce((sum, u) => sum + (u.clicked || 0), 0);
+  const linkWord = urls.length === 1 ? "link" : "links";
+  const clickWord = clicks === 1 ? "click" : "clicks";
+
+  return `<p class="stats">${urls.length} ${linkWord} · ${clicks} ${clickWord} total</p>`;
+}
+
+// read once per container rather than on every request
+let cachedCss = null;
+function styleTag() {
+  cachedCss ??= fs.readFileSync(
+    path.join(import.meta.dirname, "views", "style.css"),
+    "utf8"
+  );
+  return `<style>\n${cachedCss}</style>`;
 }
 
 export function renderPage(
   res,
   page,
   status,
-  { error = null, message = null, user = null, urls = null, origin = "" } = {}
+  { error = null, message = null, user = null, urls = null, origin = "", qr = null } = {}
 ) {
   const html = fs
     .readFileSync(path.join(import.meta.dirname, "views", page), "utf8")
-    .replace("<!--ERROR-->", error ? `<p>${escapeHtml(error)}</p>` : "")
-    .replace("<!--MESSAGE-->", message ? `<p>${escapeHtml(message)}</p>` : "")
-    .replace("<!--WELCOME-->", user ? `<p>Welcome, ${escapeHtml(user.name)}</p>` : "")
+    .replace("<!--STYLES-->", styleTag())
+    .replace("<!--ERROR-->", error ? `<p class="alert error">${escapeHtml(error)}</p>` : "")
+    .replace("<!--MESSAGE-->", message ? `<p class="alert ok">${escapeHtml(message)}</p>` : "")
+    .replace(
+      "<!--WELCOME-->",
+      user
+        ? `<span class="welcome">Signed in as <strong>${escapeHtml(user.name)}</strong></span>`
+        : "<span></span>"
+    )
+    .replace("<!--QR-->", qr || "")
+    .replace("<!--STATS-->", renderStats(urls))
     .replace("<!--URLS-->", renderUrlTable(urls, origin));
 
   res.status(status).send(html);
@@ -156,7 +207,7 @@ app.post("/logout", (req, res) => {
 });
 
 app.get("/shorten", authorize, async (req, res) => {
-  const { created, error } = req.query;
+  const { created, error, deleted } = req.query;
   const origin = `${req.protocol}://${req.get("host")}`;
 
   const urls = await Url.find({ createdBy: req.user._id })
@@ -168,7 +219,11 @@ app.get("/shorten", authorize, async (req, res) => {
     urls,
     origin,
     error: error || null,
-    message: created ? `Short URL: ${origin}/${created}` : null,
+    message: created
+      ? `Short URL: ${origin}/${created}`
+      : deleted
+        ? "Short link deleted."
+        : null,
   });
 });
 
@@ -183,6 +238,51 @@ app.post("/shorten", authorize, async (req, res) => {
   await Url.create({ shortId, url, createdBy: req.user._id });
 
   res.redirect(303, `/shorten`);
+});
+
+app.get("/urls/:id/qr", authorize, async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.isValidObjectId(id)) {
+    return renderPage(res, "qr.html", 404, { error: "That link does not exist." });
+  }
+
+  const entry = await Url.findOne({ _id: id, createdBy: req.user._id }).lean();
+
+  if (!entry) {
+    return renderPage(res, "qr.html", 404, { error: "That link does not exist." });
+  }
+
+  const short = `${req.protocol}://${req.get("host")}/${entry.shortId}`;
+  const png = await QRCode.toDataURL(short, { width: 512, margin: 1 });
+  const svg = await QRCode.toString(short, { type: "svg", margin: 1 });
+  const svgHref = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+
+  renderPage(res, "qr.html", 200, {
+    qr: `<img src="${png}" alt="QR code for ${escapeHtml(short)}" width="512" height="512" />
+        <a class="qr-target" href="${escapeHtml(short)}">${escapeHtml(short)}</a>
+        <div class="qr-actions">
+          <a class="btn-link" href="${png}" download="${escapeHtml(entry.shortId)}.png">Download PNG</a>
+          <a class="btn-link ghost" href="${svgHref}" download="${escapeHtml(entry.shortId)}.svg">Download SVG</a>
+        </div>`,
+  });
+});
+
+app.post("/urls/:id/delete", authorize, async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.isValidObjectId(id)) {
+    return res.redirect(303, "/shorten?error=That+link+does+not+exist");
+  }
+
+  // createdBy in the filter is what stops one user deleting another's link
+  const result = await Url.deleteOne({ _id: id, createdBy: req.user._id });
+
+  if (result.deletedCount === 0) {
+    return res.redirect(303, "/shorten?error=That+link+does+not+exist");
+  }
+
+  res.redirect(303, "/shorten?deleted=1");
 });
 
 app.get("/:shortId", async (req, res) => {
