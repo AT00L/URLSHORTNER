@@ -4,8 +4,6 @@ A URL shortener with user accounts, built with Node.js, Express 5 and MongoDB.
 Each user signs up, verifies their email with a one-time code, and manages their
 own set of short links with click counts and QR codes.
 
-**Live at [url.atulcode.com](https://url.atulcode.com)**
-
 ## Features
 
 - Three-step signup — email first, one-time code to confirm it, then a password
